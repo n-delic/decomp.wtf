@@ -24,7 +24,10 @@ GCC's at the top; at -O3 CodeWarrior fills delay slots too). Then pass ranges="0
 address ranges only; the brief says when a function is in such a range. compiler_map() shows where the code looks
 built by another compiler than today's, and the brief says so for the function you hold; compiler_map(survey=true)
 has the judge build agents' unmatched C with each compiler the project uses (in the background), and turns what it
-confirms into suggestions. A one-function range proves nothing: neighbouring functions decide.
+confirms into suggestions. A one-function range proves nothing: neighbouring functions decide. A range you suggest
+is tested on its neighbours before it applies (a range check, compiler_map() lists them); a neighbour may come to
+you as a task, with a note: match it, then try_compiler it with the range's compiler. Matching with one compiler and
+not the other is the answer either way.
 - CodeWarrior: small data is `-sdatathreshold 8`, not `-G8`; it gives each function its own section and
   loves `lui`/`addiu` pairs over `$gp` when the threshold is 0.
 - EE-GCC 3.2 loads a switch's jump table with `addiu %lo(jtbl)` then `lw 0(reg)`; 2.9x/2.96 use

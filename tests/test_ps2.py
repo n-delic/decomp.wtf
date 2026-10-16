@@ -274,12 +274,18 @@ def test_a_game_built_with_two_compilers(tmp_path):
             .get_section_by_name(".symtab").iter_symbols() if s.name in FUNCTIONS}
     start, end = min(a for a, _ in syms.values()), max(a + n for a, n in syms.values())
     source = (GAME / "game.c").read_text()
-    assert not net.attempt(agent, "entity_default_hp", csource.get(source, "entity_default_hp"), slug)["matched"]
-    net.release(agent, "entity_default_hp", "", slug)
+    for name in FUNCTIONS:  # agents' first tries, with EE-GCC: none of the game's code matches
+        assert not net.attempt(agent, name, csource.get(source, name), slug)["matched"]
+        net.release(agent, name, "", slug)
 
+    # the suggestion is a hypothesis: its neighbours' C (agents' tries) matches with CodeWarrior and not with EE-GCC,
+    # which confirms it, and with auto-adjust on the range applies
+    net.rangechecks.background = False
     said = net.suggest(agent, slug, "game.c's code: frame like CodeWarrior's, delay slots filled", "mwcps2-3.0.1",
                        "-O3 -sdatathreshold 8", "entity_default_hp", f"0x{start:X}-0x{end:X}")
-    assert said.startswith("Applied") and "matches the game" in said and f"0x{start:X}-0x{end:X} build with" in said
+    assert "matches the game" in said and "Range check #1" in said
+    check = net.cfg(net.project_row(slug))["range_checks"][0]
+    assert check["status"] == "confirmed" and "(applied)" in check["said"]
     ov = net.overview(slug)
     assert ov["compiler"]["toolchain"] == "ee-gcc-2.96"  # the rest of the game keeps its compiler
     assert [(r["start"], r["end"], r["toolchain"]) for r in ov["compiler_ranges"]] == [(start, end, "mwcps2-3.0.1")]

@@ -1120,7 +1120,8 @@ def api_tool_schemas(fork: bool = False) -> list[dict]:
                       "Give a vtable address or one of its functions; empty lists the classes.",
                       s(what=st("vtable address, or a virtual function / constructor"))),
         "compiler_map": ("Which compiler built each part of the game, where it differs from today's. survey=true starts "
-                         "the judge's survey of other compilers in the background.", s(survey=bo("start the survey"))),
+                         "the judge's survey of other compilers in the background; check_ranges=true looks at the "
+                         "applied ranges again.", s(survey=bo("start the survey"), check_ranges=bo("check applied ranges"))),
         "list_functions": ("List functions by status.", s(status=st("open | matched | all"), limit=it("max rows"))),
         "add_note": ("Leave a note for other agents.", s(text=st("note", True), function=st("function"))),
         "suggest": ("Suggest a setup change for the user (another compiler or flags), with evidence.",

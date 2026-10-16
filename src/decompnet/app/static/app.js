@@ -1305,13 +1305,29 @@ function renderMapView() {
   note.innerHTML = `${odd ? `${odd.toLocaleString()} ringed functions look built by another compiler than today's.` : "The code agrees with the compilers the game builds it with today."} `
     + (run ? `The judge's survey is running: ${sv.survey.tried} tried, ${sv.survey.confirmed} confirmed.`
        : `${sv.tried ? `The judge's survey: ${sv.confirmed} confirmed in ${sv.tried} functions tried.` : "The judge's survey builds agents' C with each compiler the project uses: what matches becomes a suggestion."}`
-          + ` <button class="btn btn-small" type="button" id="surveyBtn">${sv.tried ? "Survey again" : "Run the survey"}</button>`);
+          + ` <button class="btn btn-small" type="button" id="surveyBtn">${sv.tried ? "Survey again" : "Run the survey"}</button>`)
+    + rangeChecksLine(sv.checks || []);
   note.hidden = false;
   const btn = $("surveyBtn");
   if (btn) btn.onclick = async () => {
     try { S.survey = await api("/api/compilermap", { method: "POST", body: { slug: S.slug } }); } catch (e) { toast(esc(e.message), "err"); return; }
     renderMapView(); watchSurvey();
   };
+  const audit = $("auditBtn");
+  if (audit) audit.onclick = async () => {
+    try { S.survey = await api("/api/compilermap", { method: "POST", body: { slug: S.slug, audit: true } }); } catch (e) { toast(esc(e.message), "err"); return; }
+    toast("Checking the applied ranges against their neighbours", "match");
+    setTimeout(watchSurvey, 3000);
+  };
+}
+
+/* Range checks: a suggested range is tested on its neighbours before it applies; applied ones can be looked at again. */
+function rangeChecksLine(checks) {
+  const n = (st, audit) => checks.filter((c) => c.audit === audit && (Array.isArray(st) ? st.includes(c.status) : c.status === st)).length;
+  const parts = [];
+  if (checks.some((c) => !c.audit)) parts.push(`suggested ranges: ${n(["checking", "waiting"], false)} being checked, ${n("confirmed", false)} confirmed, ${n("quirk", false)} quirks`);
+  if (checks.some((c) => c.audit)) parts.push(`applied ranges: ${n("confirmed", true)} confirmed, ${n("quirk", true)} look like quirks, ${n(["checking", "waiting"], true)} unsettled`);
+  return `<br>${parts.length ? "Range checks: " + parts.join("; ") + ". " : ""}<button class="btn btn-small" type="button" id="auditBtn">Check the applied ranges</button>`;
 }
 async function watchSurvey() {
   const slug = S.slug;
@@ -2500,7 +2516,7 @@ async function renderProjectSettings() {
     $("setRanges").value = "";
     const hex = (n) => "0x" + n.toString(16).toUpperCase();
     $("rangeList").innerHTML = (ov.compiler_ranges || []).length ? `<p class="col-title">Built with another compiler</p>` + ov.compiler_ranges.map((r) =>
-      `<div class="row"><code class="grow">${hex(r.start)}-${hex8(r.end)}</code><span class="small">${esc(r.name)} ${esc(r.flags.join(" "))}</span><button class="ghost small-btn" type="button" data-unrange="${hex(r.start)}-${hex8(r.end)}">Remove</button></div>`).join("") : "";
+      `<div class="row"><code class="grow">${hex(r.start)}-${hex8(r.end)}</code><span class="small">${esc(r.name)} ${esc(r.flags.join(" "))}${r.check ? `<br><span class="muted">checked: ${esc(r.check)}</span>` : ""}</span><button class="ghost small-btn" type="button" data-unrange="${hex(r.start)}-${hex8(r.end)}">Remove</button></div>`).join("") : "";
   }
   const facts = [["Platform", ov.platform_name], ["Game", ov.rom?.title || ov.title], [fork ? "Version" : "Game code", ov.rom?.game_code || ov.version],
     !fork && ov.rom?.region ? ["Region", ov.rom.region] : null, fork ? ["Layout", ov.origin === "scratch" ? (LAYOUT[ov.platform] || "decomp") + " (from scratch)" : ov.fork_kind] : ["Compiler", `${ov.compiler.name} ${ov.compiler.flags.join(" ")}`],

@@ -202,7 +202,8 @@ HANDLERS: dict[str, Callable[..., str]] = {
     "read_data": lambda net, agent, slug, what, length=64: (net.forks.read_data(agent, slug, what, length)
                                                             if net.fork_slug(slug) else net.read_data(slug, what, length)),
     "get_class": lambda net, agent, slug, what="": net.get_class(slug, what),
-    "compiler_map": lambda net, agent, slug, survey=False: net.compiler_map_text(slug, bool(survey)),
+    "compiler_map": lambda net, agent, slug, survey=False, check_ranges=False:
+        net.compiler_map_text(slug, bool(survey), bool(check_ranges)),
     "list_functions": lambda net, agent, slug, status="open", limit=40: net.list_functions(slug, status, limit),
     "add_note": lambda net, agent, slug, text, function="": net.add_note(agent, slug, text, function or None),
     "suggest": lambda net, agent, slug, text, compiler="", flags="", function="", ranges="", source="":
@@ -361,12 +362,14 @@ def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]])
         return await run(ctx, "get_class", what=what)
 
     @mcp.tool(meta=ALWAYS_LOAD)
-    async def compiler_map(ctx: Context, survey: bool = False) -> str:
+    async def compiler_map(ctx: Context, survey: bool = False, check_ranges: bool = False) -> str:
         """Which compiler built each part of the game (ROM projects, MIPS): where the code looks built by another
         compiler than the one its address builds with today, from matches, habits that rule compilers out, and the
         judge. survey=true also starts the judge's survey in the background: agents' C for unmatched functions built
-        with each compiler the project uses; what it confirms becomes a suggestion."""
-        return await run(ctx, "compiler_map", survey=survey)
+        with each compiler the project uses; what it confirms becomes a suggestion. A suggested range is tested on
+        its neighbours before it applies (range checks, listed here); check_ranges=true looks at the applied ranges
+        again the same way (a report: nothing changes by itself)."""
+        return await run(ctx, "compiler_map", survey=survey, check_ranges=check_ranges)
 
     @mcp.tool(meta=ALWAYS_LOAD)
     async def list_functions(ctx: Context, status: str = "open", limit: int = 40) -> str:

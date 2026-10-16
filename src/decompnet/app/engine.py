@@ -183,6 +183,8 @@ class RomNetwork(Network):
         self.forks = ForkEngine(self)
         self.twins = Twins(self)
         self.permuter = Permuter(self)
+        from .rangecheck import RangeChecks
+        self.rangechecks = RangeChecks(self)
 
     # ------------------------------------------------------------------ basics
 
@@ -788,7 +790,7 @@ class RomNetwork(Network):
     def _short(self, lab: compilermap.Label) -> str:
         return f"{SHORT_NAMES.get(lab[0], lab[0])} {' '.join(lab[1])}".strip()
 
-    def compiler_map_text(self, slug: str, survey: bool = False) -> str:
+    def compiler_map_text(self, slug: str, survey: bool = False, check_ranges: bool = False) -> str:
         """The map for agents: where it differs from the compiler the game builds with today, and why."""
         self._rom_only(slug, "compiler_map")
         proj = self._project(slug)
@@ -798,6 +800,9 @@ class RomNetwork(Network):
         started = ""
         if survey:
             started = self.start_survey(slug)["state"] + ". "
+        if check_ranges:
+            started += (f"Checking {self.rangechecks.audit(proj)} applied range(s) again, with the evidence their "
+                        f"neighbours already give (in the background). ")
         cfg = self.cfg(proj)
         syms = self.symbols(proj["id"])
         lines = [f"{started}The game builds with {self._short((cfg['compiler']['toolchain'], tuple(cfg['compiler']['flags'])))}"
@@ -820,9 +825,10 @@ class RomNetwork(Network):
             names = ", ".join(syms.label(a) for a in sorted(cmap.contradicted)[:12])
             lines.append(f"{len(cmap.contradicted)} functions show a habit their compiler never does: {names}"
                          + (", ..." if len(cmap.contradicted) > 12 else "") + ". try_compiler them with another one.")
+        lines += self.rangechecks.text(proj)
         state = self.surveys.get(slug) or {}
         last = (cfg.get("compiler_survey") or {})
-        lines.append(f"The judge's survey (agents' C built with each compiler the project uses): "
+        lines.append("The judge's survey (agents' C built with each compiler the project uses): "
                      + (f"running, {state.get('tried', 0)} tried, {state.get('confirmed', 0)} confirmed" if state.get("state") == "running"
                         else f"{len(last.get('confirmed', {}))} confirmed in {len(last.get('tried', {}))} functions tried"
                         if last else "not run yet")
@@ -953,6 +959,8 @@ class RomNetwork(Network):
             habits = ", ".join(cmap.never.get(compilermap.kind(today), []))
             lines.append(f"Its code shows a habit {self._short(today)} never has here ({habits}): it was probably "
                          f"built by another compiler. compiler_map() shows which compilers this game uses.")
+        for c in self.rangechecks.checks_on(proj, fn["vram"]):
+            lines.append(self.rangechecks.task_text(c, fn["name"]))
         return ["", "### Compiler"] + lines if lines else []
 
     def _extra_brief(self, fn, proj) -> list[str]:
@@ -1513,7 +1521,10 @@ class RomNetwork(Network):
         link = self._link(project)
         if link is not None:
             link.call("/collab/release", agent, function=self._function(function, project)["name"], notes=notes)
-        return super().release(agent, function, notes, project)
+        said = super().release(agent, function, notes, project)
+        fn = self._function(function, project)
+        self.rangechecks.gave_up(self.store.one("SELECT * FROM projects WHERE id=?", fn["project_id"]), fn)
+        return said
 
     def edit_context(self, agent: Agent, project: str | None, old: str, new: str, message: str,
                      function: str | None = None) -> str:
@@ -1712,8 +1723,7 @@ class RomNetwork(Network):
                                              "suggestions": [s for s in cfg.get("suggestions", []) if s["status"] == "open"
                                                              and not re.search(r"does not match|doesn't compile", s["check"] or "")],
                                              "boundaries": [r for r in cfg.get("boundaries", []) if r["status"] == "open"],
-                                             "compiler_ranges": [r | {"name": SHORT_NAMES.get(r["toolchain"], r["toolchain"])}
-                                                                 for r in cfg.get("compiler_ranges", [])]}
+                                             "compiler_ranges": self._range_rows(cfg)}
 
     def _overview(self, slug: str, proj) -> dict:
         if (fork := self.fork_slug(slug)):
@@ -1788,6 +1798,12 @@ class RomNetwork(Network):
                          "ccx": compilermap.kind(looks) != compilermap.kind((own["toolchain"], tuple(own["flags"])))
                          or addr in cmap.contradicted}
         return out
+
+    def _range_rows(self, cfg: dict) -> list[dict]:
+        """The project's compiler ranges for the GUI, each with what checking it again said (rangecheck.py)."""
+        said = {tuple(map(tuple, c["spans"])): c.get("said", "") for c in cfg.get("range_checks", []) if c.get("audit")}
+        return [r | {"name": SHORT_NAMES.get(r["toolchain"], r["toolchain"]), "check": said.get(((r["start"], r["end"]),), "")}
+                for r in cfg.get("compiler_ranges", [])]
 
     def map_signature(self, slug: str) -> str:
         """What the function map shows, summed up: it changes when a function is added, matched, tried or claimed.
@@ -1891,11 +1907,8 @@ class RomNetwork(Network):
         self._update_cfg(slug, change)
         s = found[0]
         note = f" ({check})" if check else ""
-        if spans and not self._range_proof(proj, spans):
-            return (f"Suggested, not applied by itself: ranges this small ({sum(b - a for a, b in spans)} bytes, "
-                    f"{self._functions_in(proj, spans)} function(s)) prove nothing about the compiler, since a few "
-                    f"instructions come out the same from several compilers. More likely the C isn't the original's "
-                    f"yet. It waits for the user.{note}")
+        if spans and tc:  # a hypothesis: its neighbours decide (rangecheck.py), not its size
+            return f"Suggested.{note} " + self.rangechecks.propose(proj, s, function, tc, flag_list, spans, source)
         if tc and self.auto_compiler and ("matches the game" in (s["check"] or "") or len(s["agents"]) >= self.AGREE):
             try:
                 self.resolve_suggestion(slug, s["id"], apply=True, guard=True)
@@ -1981,6 +1994,7 @@ class RomNetwork(Network):
         if d is None:
             return f"{what}: doesn't compile:\n{problem.strip()[-1500:]}"
         if ok:
+            self.rangechecks.tried(proj, fn, tc, flag_list, source, True)
             return (f"{what}: MATCHES the game byte for byte. Suggest it: suggest(compiler=\"{tc}\", flags=\"{' '.join(flag_list)}\", "
                     f"function=\"{fn['name']}\", ranges=<the address range it built>, source=<this C>)")
         return f"{what}: score {d.score} ({d.percent:.1f}%), not a match\n{d.render(context=1, max_rows=40)}"
@@ -2154,6 +2168,8 @@ class RomNetwork(Network):
         if agent is not None and agent.name == "autopilot" and self.twins._full_running(proj["slug"]):
             return
         self.twins.after_match(proj, function_id)
+        if any(c["status"] in ("checking", "waiting") for c in self.cfg(proj).get("range_checks", [])):
+            self.rangechecks.recheck(proj["slug"])  # a neighbour of a suggested range may have spoken
 
     def try_quietly(self, agent, proj, fn, source: str) -> dict:
         """Judge one candidate for a function nobody holds (autopilot's tries): held only while it compiles,

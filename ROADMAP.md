@@ -24,6 +24,7 @@ start). Keep this table true when a feature ships or reaches another platform.
 | Function-end reports (`report_boundary`) | ✓ | ✓ | ✓ | — | — | — | — | — |
 | Compiler ranges and suggestions | ✓ | ✓ | ✓ | ✓ | the project's build | the project's build | the project's build | the project's build |
 | Compiler map and the judge's survey | ✓ | ✓ | ✓ | — | — | — | — | — |
+| Range checks: a range applies after its neighbours confirm it | ✓ | ✓ | ✓ | — | — | — | — | — |
 | C++ classes from the code (`get_class`) | ✓ | ✓ | ✓ | — | — | — | — | — |
 | Rebuildable export | ✓ | ✓ | ✓ | ✓ | the project | the project | — | the project |
 | Rooms: decompile together | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -38,6 +39,13 @@ Where to start on a gap:
 - **Function-end reports** cut MIPS functions (`engine._cut`); GBA has its own splitter (`_split_gba`).
 
 ## Recently done
+
+- **Range checks** (MIPS ROM projects). An agent's "this range was built by another compiler" is a hypothesis: the
+  judge tests the functions next to it (their matches, agents' attempts, the survey, habits), and where nothing
+  settles it the nearest neighbour goes to an agent as a task. A range applies once a second function matches only
+  with its compiler; refuted neighbours on both sides make it a quirk (dismissed, with a note on the function). The
+  applied ranges can be checked again the same way (a report). On GTA San Andreas's 72 ranges: 12 confirmed, about
+  25 resting on one function, about 36 with no function whose C needs their compiler.
 
 - **Compiler map** (MIPS: PlayStation 2, PlayStation, N64): which compiler built each part of the game. Measured on
   GTA San Andreas, compilers' habits only rule compilers out (-G0 code never reads through `$gp`; its CodeWarrior
